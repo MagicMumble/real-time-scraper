@@ -4,12 +4,16 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import time
 import schedule
+from reportlab.graphics.charts.textlabels import Label
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.firefox.service import Service as FirefoxService
 import logging
 import sys
 import argparse
+from linkedIn_scraper import *
+from urllib.parse import quote
 
 
 # setup google sheets
@@ -43,17 +47,10 @@ def scroll_page(driver):
         last_height = new_height
 
 
-def scrape_companies(browser, website_link, label):
+# here we get the companies from the website, scrape the data and return it
+def scrape_Ycombinator_companies(browser, website_link, label):
 
-    # the chrome/firefox driver executables should be in the PATH (env var)
-    if browser == "chrome":
-        service = ChromeService()
-        driver = webdriver.Chrome(service=service)
-    elif browser == "firefox":
-        service = FirefoxService()
-        driver = webdriver.Firefox(service=service)
-    else:
-        raise Exception("Please choose between chrome or firefox")
+    driver = get_the_driver(browser)
 
     # by scrolling we can only get first 1000 elements so there is no point in scrolling through 1000+ elements because we are loosing data
     # this is why we are using a direct link to get only matching companies and scroll through them
@@ -65,13 +62,12 @@ def scrape_companies(browser, website_link, label):
     result = []
 
     companies = soup.find_all('a', attrs={"class": "_company_86jzd_338"})
-    logging.info(f"There are {len(companies)} companies in total with the flag {label}")
+    logging.info(f"There are {len(companies)} companies in total on the YCombinator website with the flag {label}")
 
     for company in companies:
         company_name = company.find('span', {'class': "_coName_86jzd_453"}).text
-        company_location = company.find('span', {'class': "_coLocation_86jzd_469"}).text
         company_description = company.find('span', {'class': "_coDescription_86jzd_478"}).text
-        result.append((company_name, company_location, company_description))
+        result.append((company_name, company_description))
 
     driver.quit()
     return result
@@ -80,7 +76,7 @@ def scrape_companies(browser, website_link, label):
 # write_to_google_sheets writes companies' info to the Google spreadsheet
 def write_to_google_sheets(spreadsheet, companies):
     spreadsheet.clear()
-    spreadsheet.append_row(["Company Name", "Location", "Description"])
+    spreadsheet.append_row(["Company Name", "Description"])
 
     for company in companies:
         spreadsheet.append_row(company)
@@ -91,12 +87,22 @@ def write_to_google_sheets(spreadsheet, companies):
 # job is started every 6 hours
 def job(args):
     logging.info("Started the job")
+    companiesYC, companiesLinkedIn = [], []
+    try:
+        companiesYC = scrape_Ycombinator_companies(args.browser, args.website, args.label)
+    except Exception:
+        logging.error(f"Can't scrape companies from {args.website}", exc_info=True)
+
+    try:
+        companiesLinkedIn = scrape_LinkedIn_companies(args)
+    except Exception:
+        logging.error(f"Can't scrape companies from LinkedIn", exc_info=True)
+
     try:
         spreadsheet = setup_google_sheets(args.json_key, args.spreadsheet_name)
-        companies = scrape_companies(args.browser, args.website, args.label)
-        write_to_google_sheets(spreadsheet, companies)
-    except Exception as e:
-        logging.error(e)
+        write_to_google_sheets(spreadsheet, companiesYC+companiesLinkedIn)
+    except Exception:
+        logging.error(f"Can't write companies to google spreadsheet", exc_info=True)
 
     logging.info("Finished the job")
 
@@ -109,6 +115,13 @@ def process_command_line_args(args):
         default="F24",
         type=str,
         help="The flag that will be matched against the companies",
+    )
+    parser.add_argument(
+        "-t",
+        "--linkedIn-tag",
+        default="YC F24",
+        type=str,
+        help="The linkedIn tag that will be matched against the companies from the linkedIn",
     )
     parser.add_argument(
         "-n",
@@ -138,6 +151,20 @@ def process_command_line_args(args):
         default="chrome",
         type=str,
         help="The browser with the selenium extension",
+    )
+    parser.add_argument(
+        "-e",
+        "--linkedIn-email",
+        required=True,
+        type=str,
+        help="The linkedIn email to access linkedIn page",
+    )
+    parser.add_argument(
+        "-p",
+        "--linkedIn-password",
+        required=True,
+        type=str,
+        help="The linkedIn password corresponding to provided email",
     )
     return parser.parse_args(args)
 
