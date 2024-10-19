@@ -56,8 +56,9 @@ def get_companies(driver, label):
         page_number += 1
 
     driver.quit()
-    logging.info(f"There are {len(resulting_companies)} companies in total on the LinkedIn website with the flag {label}")
-    return resulting_companies
+    companies = [item for sublist in resulting_companies for item in sublist]
+    logging.info(f"There are {len(companies)} companies in total on the LinkedIn website with the flag {label}")
+    return companies
 
 
 # here we get the name and the description of each company
@@ -74,6 +75,5 @@ def parse_companies(companies):
 def scrape_LinkedIn_companies(args):
     driver = login(args.linkedIn_email, args.linkedIn_password, args.browser)
     companies = get_companies(driver, args.linkedIn_tag)
-    companies = [item for sublist in companies for item in sublist]
     result = parse_companies(companies)
     return result
