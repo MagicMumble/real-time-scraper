@@ -76,16 +76,19 @@ def scrape_Ycombinator_companies(browser, website_link, label):
 # write_to_google_sheets writes companies' info to the Google spreadsheet
 def write_to_google_sheets(spreadsheet, companies):
     spreadsheet.clear()
-    spreadsheet.append_row(["Company Name", "Description"])
+    data = [("Company Name", "Description")] + companies
 
-    for company in companies:
-        spreadsheet.append_row(company)
+    cell_range = f"A1:C{len(data)}"
+    spreadsheet.batch_update([{
+        'range': cell_range,
+        'values': data
+    }])
 
     logging.info(f"Written data to google sheet")
 
 
 # job is started every 6 hours
-def job(args):
+def job(args, linkedInDriver):
     logging.info("Started the job")
     companiesYC, companiesLinkedIn = [], []
     try:
@@ -94,7 +97,7 @@ def job(args):
         logging.error(f"Can't scrape companies from {args.website}", exc_info=True)
 
     try:
-        companiesLinkedIn = scrape_LinkedIn_companies(args)
+        companiesLinkedIn = scrape_LinkedIn_companies(args, linkedInDriver)
     except Exception:
         logging.error(f"Can't scrape companies from LinkedIn", exc_info=True)
 
@@ -176,8 +179,9 @@ def main(args=None):
                         level=logging.INFO)
     logging.info(
         f"Scraping of the {args.website} and loading the data into {args.spreadsheet_name} has started with the periodicity of 6 hours")
-    job(args)
-    schedule.every(6).hours.do(job, args)
+    linkedInDriver = login(args.linkedIn_email, args.linkedIn_password, args.browser)
+    job(args, linkedInDriver)
+    schedule.every(6).hours.do(job, args, linkedInDriver)
     while True:
         schedule.run_pending()
         time.sleep(1)
